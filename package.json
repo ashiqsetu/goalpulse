@@ -1,0 +1,27 @@
+{
+  "name": "goalpulse",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "netlify:dev": "npx -y netlify-cli dev",
+    "build": "vite build",
+    "lint": "oxlint",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.9.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.18",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "oxlint": "^1.81.0",
+    "tailwindcss": "^4.1.18",
+    "vite": "^8.3.0"
+  }
+}

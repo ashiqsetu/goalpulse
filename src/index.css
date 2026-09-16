@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+@theme {
+  --color-pitch: #0b1210;
+  --color-pitch-2: #101a16;
+  --color-card: #14211c;
+  --color-line: #23362e;
+  --color-grass: #22c55e;
+  --color-live: #ef4444;
+  --color-gold: #fbbf24;
+}
+
+html, body, #root {
+  min-height: 100%;
+}
+
+body {
+  @apply bg-pitch text-slate-100 antialiased;
+}
+
+.card {
+  @apply rounded-xl border border-line bg-card;
+}
+
+.live-dot {
+  @apply inline-block h-2 w-2 rounded-full bg-live animate-pulse;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #23362e; border-radius: 8px; }
+::-webkit-scrollbar-track { background: transparent; }

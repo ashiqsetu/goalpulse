@@ -16,8 +16,11 @@ export function planError(data) {
 }
 
 export const fmtDate = (iso) => iso.slice(0, 10)
-export const fmtTime = (iso) =>
-  new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+export const fmtTime = (iso) => {
+  const d = iso ? new Date(iso) : null
+  if (!d || Number.isNaN(d.getTime())) return 'TBC'
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
 export function fmtStatus(f) {
   const s = f?.status?.short || ''
   if (s === '1H' || s === '2H' || s === 'HT' || s === 'ET' || s === 'BT' || s === 'P' || s === 'LIVE') {
@@ -29,3 +32,17 @@ export function fmtStatus(f) {
 export const isLive = (f) => ['1H', '2H', 'HT', 'ET', 'BT', 'P', 'LIVE'].includes(f?.status?.short)
 export const isFinished = (f) =>
   ['FT', 'AET', 'PEN', 'PST', 'CANC', 'ABD', 'AWD', 'WO', 'SUSP', 'INT'].includes(f?.status?.short)
+
+// The visitor's IANA timezone. Passing it to fixtures?date= makes the API group
+// matches by the user's own day, so evening kick-offs don't leak into "tomorrow".
+export const TZ = (() => {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' } catch { return 'UTC' }
+})()
+
+// The visitor's local calendar date (YYYY-MM-DD). Using toISOString() instead
+// would give the UTC date, which is wrong for anyone ahead of UTC in the
+// evening — matches would appear a day early/late.
+export const todayLocal = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}

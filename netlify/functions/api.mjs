@@ -34,6 +34,14 @@ export default async (req) => {
 
   const { base, params } = parseEndpoint(endpoint)
 
+  // fixtures?date= has no timezone context upstream; default to the caller's
+  // timezone (sent by the frontend) so "today" matches the user's calendar day
+  // and evening kick-offs don't shift to the next day.
+  if (base === 'fixtures' && params.date && !params.timezone) {
+    const tz = url.searchParams.get('tz')
+    if (tz) params.timezone = tz
+  }
+
   // Only allow known, safe endpoints — never expose the key to the client.
   const allowed = new Set([
     'fixtures',
@@ -52,6 +60,14 @@ export default async (req) => {
   const cached = cacheGet(key)
   if (cached) {
     return json(200, { ...cached, _cached: true })
+  }
+
+  // Fail loudly if the key isn't configured, instead of forwarding an empty
+  // key upstream (which returns a confusing "Invalid API key" error).
+  if (!process.env.V3_FOOTBALL_API_KEY) {
+    return json(500, {
+      error: 'Server misconfigured: V3_FOOTBALL_API_KEY is not set. Add it in Netlify (Site configuration → Environment variables) and redeploy.',
+    })
   }
 
   const upstream = new URLSearchParams(params)

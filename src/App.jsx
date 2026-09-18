@@ -6,6 +6,7 @@ import StandingsPage from './pages/StandingsPage'
 import TeamPage from './pages/TeamPage'
 import PlayerPage from './pages/PlayerPage'
 import BuilderPage from './pages/BuilderPage'
+import HistoryPage from './pages/HistoryPage'
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
           <Route path="/team/:teamId" element={<TeamPage />} />
           <Route path="/player/:playerId" element={<PlayerPage />} />
           <Route path="/builder" element={<BuilderPage />} />
+          <Route path="/history" element={<HistoryPage />} />
           <Route path="*" element={<div className="card p-8 text-center">Page not found</div>} />
         </Route>
       </Routes>

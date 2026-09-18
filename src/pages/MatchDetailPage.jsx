@@ -1,8 +1,31 @@
 import { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { apiGet, planError, fmtTime, fmtStatus, isLive, isFinished } from '../lib/api'
-import { winPercentages, favoriteOutcome, bestOdds, h2hDistribution, accOdds, OUTCOME_LABEL } from '../lib/bet'
+import { winPercentages, favoriteOutcome, bestOdds, h2hDistribution, accOdds, OUTCOME_LABEL, glossaryHits } from '../lib/bet'
+import { addToSlip, loadSlip } from '../lib/store'
 import ErrorBox from '../components/ErrorBox'
+import Info from '../components/Info'
+
+// System suggestion with hover notes for betting jargon ("-3.5 goals" etc.)
+function Suggestion({ text }) {
+  const hits = glossaryHits(text)
+  return (
+    <div className="mt-3 rounded-lg border border-grass/40 bg-grass/10 p-3 text-sm">
+      <span className="font-semibold text-grass">System suggestion:</span>{' '}
+      {text}
+      {hits.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-grass/20 pt-2">
+          <span className="text-[11px] text-slate-400">What this means — hover:</span>
+          {hits.map((t) => (
+            <span key={t} className="inline-flex items-center gap-1 rounded-full bg-pitch-2 px-2 py-0.5 text-[11px] text-slate-200">
+              {t} <Info term={t} />
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function ProbBar({ wp, pick, onPick }) {
   const rows = [
@@ -117,6 +140,7 @@ function Form({ team }) {
 
 export default function MatchDetailPage() {
   const { fixtureId } = useParams()
+  const navigate = useNavigate()
   const [fx, setFx] = useState(null)
   const [pred, setPred] = useState(null)
   const [odds, setOdds] = useState(null)
@@ -124,6 +148,7 @@ export default function MatchDetailPage() {
   const [standings, setStandings] = useState(null)
   const [error, setError] = useState(null)
   const [pick, setPick] = useState(null)
+  const [slipCount, setSlipCount] = useState(() => loadSlip().length)
 
   useEffect(() => {
     let alive = true
@@ -187,8 +212,13 @@ export default function MatchDetailPage() {
   const rowH = findRow(home.id)
   const rowA = findRow(away.id)
 
-  const oddsList = [bo.H?.odd, bo.D?.odd, bo.A?.odd].filter(Boolean)
   const acc = pick ? accOdds([pick === 'H' ? bo.H?.odd : pick === 'D' ? bo.D?.odd : bo.A?.odd]) : null
+  const inSlip = loadSlip().some((e) => e.fixture?.id === fx.fixture.id)
+  const addFixtureToSlip = () => {
+    addToSlip(fx)
+    setSlipCount(loadSlip().length)
+    navigate('/builder')
+  }
 
   return (
     <div className="space-y-4">
@@ -236,12 +266,7 @@ export default function MatchDetailPage() {
             From bookmaker odds + algorithmic prediction. Click a row to build your bet.
           </p>
           <ProbBar wp={wp} pick={pick} onPick={setPick} />
-          {(advice || predComment) && (
-            <div className="mt-3 rounded-lg border border-grass/40 bg-grass/10 p-3 text-sm">
-              <span className="font-semibold text-grass">System suggestion:</span>{' '}
-              {advice || predComment}
-            </div>
-          )}
+          {(advice || predComment) && <Suggestion text={advice || predComment} />}
           {!advice && !predComment && wp[fav] > 0 && (
             <div className="mt-3 rounded-lg border border-grass/40 bg-grass/10 p-3 text-sm">
               <span className="font-semibold text-grass">System suggestion:</span>{' '}
@@ -249,11 +274,31 @@ export default function MatchDetailPage() {
               {bo[fav]?.odd ? ` @ ${bo[fav].odd}` : ''}
             </div>
           )}
+          {/* Add to bet builder */}
+          {!started && (
+            <button
+              onClick={addFixtureToSlip}
+              disabled={inSlip}
+              className={`mt-3 w-full rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                inSlip
+                  ? 'cursor-default border-grass/40 bg-grass/10 text-grass'
+                  : 'border-grass bg-grass text-pitch hover:opacity-90'
+              }`}
+            >
+              {inSlip ? '✓ In your bet builder' : '+ Add to Bet Builder'}
+            </button>
+          )
+          }
           {pick && (
             <div className="mt-3 rounded-lg border border-gold/40 bg-gold/10 p-3 text-sm text-gold">
               Your pick: <b>{OUTCOME_LABEL[pick]}</b>
-              {acc && acc > 1 && <> · odds {acc.toFixed(2)}</>} ·{' '}
-              <Link to="/builder" className="underline">open in Bet Builder</Link>
+              {acc && acc > 1 && <> · odds {acc.toFixed(2)}</>}
+            </div>
+          )}
+          {slipCount > 0 && (
+            <div className="mt-2 text-right text-xs text-slate-400">
+              {slipCount} match{slipCount > 1 ? 'es' : ''} in your builder ·{' '}
+              <Link to="/builder" className="underline hover:text-grass">open</Link>
             </div>
           )}
           {planErr && <div className="mt-3 text-xs text-slate-500">Prediction note: {planErr}</div>}
@@ -331,6 +376,7 @@ export default function MatchDetailPage() {
       )}
 
       {/* Odds table */}
+      {/* placeholder-anchor */}
       {odds?.response?.length > 0 && (
         <section className="card p-4">
           <h3 className="mb-3 font-semibold">Match winner odds</h3>

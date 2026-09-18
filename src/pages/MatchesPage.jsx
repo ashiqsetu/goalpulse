@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { apiGet, planError, isLive } from '../lib/api'
+import { apiGet, planError, isLive, TZ, todayLocal } from '../lib/api'
 import MatchRow from '../components/MatchRow'
 import ErrorBox from '../components/ErrorBox'
 
@@ -12,7 +12,7 @@ function shiftDate(iso, days) {
 }
 
 function fmtDayLabel(iso) {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayLocal()
   if (iso === today) return 'Today'
   const tomorrow = shiftDate(today, 1)
   const yesterday = shiftDate(today, -1)
@@ -24,7 +24,7 @@ function fmtDayLabel(iso) {
 }
 
 export default function MatchesPage() {
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [date, setDate] = useState(todayLocal)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -33,7 +33,7 @@ export default function MatchesPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await apiGet(`fixtures?date=${d}`)
+      const res = await apiGet(`fixtures?date=${d}&tz=${encodeURIComponent(TZ)}`)
       const err = planError(res)
       if (err) setError(err)
       setData(res)
@@ -49,7 +49,7 @@ export default function MatchesPage() {
   // Auto-refresh live scores every 60s
   useEffect(() => {
     const t = setInterval(() => {
-      if (date === new Date().toISOString().slice(0, 10)) load(date)
+      if (date === todayLocal()) load(date)
     }, 60000)
     return () => clearInterval(t)
   }, [date, load])

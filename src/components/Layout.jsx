@@ -3,6 +3,7 @@ import { NavLink, Outlet, Link } from 'react-router-dom'
 const tabs = [
   { to: '/', label: 'Matches' },
   { to: '/builder', label: 'Bet Builder' },
+  { to: '/history', label: 'History' },
   { to: '/standings', label: 'Table' },
 ]
 

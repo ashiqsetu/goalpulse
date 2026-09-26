@@ -36,10 +36,15 @@ export default async (req) => {
 
   // fixtures?date= has no timezone context upstream; default to the caller's
   // timezone (sent by the frontend) so "today" matches the user's calendar day
-  // and evening kick-offs don't shift to the next day.
-  if (base === 'fixtures' && params.date && !params.timezone) {
-    const tz = url.searchParams.get('tz')
-    if (tz) params.timezone = tz
+  // and evening kick-offs don't shift to the next day. The frontend appends
+  // `tz=` to the endpoint itself, so it arrives inside `ep` and lands in
+  // `params` after parseEndpoint — it is NOT a top-level query param of this
+  // function. Rename it to `timezone` (the name upstream expects) and drop
+  // the original key so we never forward `tz` to the API.
+  if (base === 'fixtures' && params.date) {
+    const tz = params.tz
+    delete params.tz
+    if (tz && !params.timezone) params.timezone = tz
   }
 
   // Only allow known, safe endpoints — never expose the key to the client.

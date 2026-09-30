@@ -7,6 +7,7 @@ import {
   buildVariations, splitStake,
 } from '../lib/bet'
 import { loadSlip, removeFromSlip, clearSlip, placeBet } from '../lib/store'
+import { LEAGUE_ORDER, isWantedLeague } from '../lib/leagues'
 import ErrorBox from '../components/ErrorBox'
 import Info from '../components/Info'
 
@@ -25,7 +26,7 @@ export default function BuilderPage() {
   const [error, setError] = useState(null)
   const [selected, setSelected] = useState(() => loadSlip()) // fixtures for the builder
   const [picks, setPicks] = useState({}) // fixtureId -> { k, line } | null
-  const [mode, setMode] = useState('picks') // 'picks' | 'cover'
+  const [mode, setMode] = useState('cover') // 'cover' = all possibilities | 'picks' = my picks only
   const [budget, setBudget] = useState(100)
   const [detail, setDetail] = useState({}) // fixtureId -> { wp, bo, totals, favorite, options }
 
@@ -76,10 +77,9 @@ export default function BuilderPage() {
   }, [selected]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const fixtures = useMemo(() => {
-    const list = (data?.response || []).filter(pickable)
-    const order = [39, 140, 135, 78, 61]
+    const list = (data?.response || []).filter((f) => pickable(f) && isWantedLeague(f.league.id))
     return list.sort((a, b) => {
-      const ia = order.indexOf(a.league.id); const ib = order.indexOf(b.league.id)
+      const ia = LEAGUE_ORDER.indexOf(a.league.id); const ib = LEAGUE_ORDER.indexOf(b.league.id)
       return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || a.timestamp - b.timestamp
     })
   }, [data])
@@ -120,10 +120,20 @@ export default function BuilderPage() {
 
   const variationsResult = useMemo(() => {
     if (builderMatches.length === 0) return null
-    const { variations } = buildVariations(builderMatches, optionsPerMatch)
+    // "All possibilities" enumerates options^N combinations. Guard the
+    // explosion: past a threshold, enumerate the core 1X2 outcomes only.
+    const projected = optionsPerMatch.reduce((a, o) => a * Math.max(1, o.length), 1)
+    const capped = projected > 3000
+    const perMatch = capped
+      ? optionsPerMatch.map((o) => {
+          const core = o.filter((x) => x.k === 'H' || x.k === 'D' || x.k === 'A')
+          return core.length ? core : o.slice(0, 3)
+        })
+      : optionsPerMatch
+    const { variations } = buildVariations(builderMatches, perMatch)
     const withOdds = variations.filter((v) => v.combinedOdds > 1)
     const split = splitStake(withOdds, budget)
-    return { variations: withOdds, split, mode }
+    return { variations: withOdds, split, mode, capped }
   }, [builderMatches, optionsPerMatch, budget])
 
   const toggle = (f) => {
@@ -302,7 +312,7 @@ export default function BuilderPage() {
                 checked={mode === 'cover'}
                 onChange={() => setMode('cover')}
               />
-              Cover everything (guaranteed at least one win)
+              All possibilities (guaranteed at least one wins)
             </label>
           </div>
         </section>
@@ -372,12 +382,14 @@ export default function BuilderPage() {
               <div className="text-sm font-semibold">
                 {variationsResult.variations.length} variation{variationsResult.variations.length === 1 ? '' : 's'}
                 {mode === 'cover' && ' — one of them is guaranteed to match the real results'}
+                {variationsResult.capped && ' · core outcomes only (remove a match for full coverage)'}
               </div>
             </div>
             <div className="max-h-96 space-y-1.5 overflow-y-auto pr-1">
               {variationsResult.variations
                 .map((v, i) => ({ v, i }))
                 .sort((a, b) => b.v.prob - a.v.prob)
+                .slice(0, 200)
                 .map(({ v, i }, rank) => (
                   <div key={i} className="rounded-lg border border-line px-3 py-2 text-sm">
                     <div className="flex flex-wrap items-center gap-2">
@@ -403,6 +415,12 @@ export default function BuilderPage() {
                   </div>
                 ))}
             </div>
+            {variationsResult.variations.length > 200 && (
+              <div className="mt-2 text-center text-xs text-slate-500">
+                Showing the 200 most likely of {variationsResult.variations.length} variations —
+                the stake is already split across all of them.
+              </div>
+            )}
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">

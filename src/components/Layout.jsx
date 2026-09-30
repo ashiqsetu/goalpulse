@@ -1,4 +1,5 @@
 import { NavLink, Outlet, Link } from 'react-router-dom'
+import QuotaBadge from './QuotaBadge'
 
 const tabs = [
   { to: '/', label: 'Matches' },
@@ -18,6 +19,7 @@ export default function Layout() {
               Goal<span className="text-grass">Pulse</span>
             </span>
           </Link>
+          <QuotaBadge />
           <nav className="ml-auto flex items-center gap-1 text-sm">
             {tabs.map((t) => (
               <NavLink

@@ -16,18 +16,14 @@ export default function TeamPage() {
     setError(null)
     setTeam(null)
     setFixtures(null)
+    // Team profile and schedule are separate endpoints; run them in parallel —
+    // the schedule call also backfills the server's fixture-id index.
     apiGet(`teams?id=${teamId}`)
       .then((res) => { if (alive) setTeam(res.response?.[0] || null) })
       .catch((e) => { if (alive) setError(e.message) })
-    const year = new Date().getUTCFullYear()
-    apiGet(`fixtures?team=${teamId}&season=${year}`)
+    apiGet(`fixtures?team=${teamId}`)
       .then((res) => { if (alive) setFixtures(res) })
-      .catch(() => {
-        // Some seasons aren't on the free plan — retry with previous season
-        apiGet(`fixtures?team=${teamId}&season=${year - 1}`)
-          .then((res) => { if (alive) setFixtures(res) })
-          .catch(() => {})
-      })
+      .catch(() => { /* schedule is optional */ })
     return () => { alive = false }
   }, [teamId])
 

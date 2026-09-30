@@ -2,8 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiGet, planError, isLive, TZ, todayLocal } from '../lib/api'
 import MatchRow from '../components/MatchRow'
 import ErrorBox from '../components/ErrorBox'
-
-const LEAGUE_ORDER = [39, 140, 135, 78, 61, 94, 88] // EPL, La Liga, Serie A, Bundesliga, Ligue 1, Eredivisie, NL
+import { LEAGUE_ORDER, isWantedLeague } from '../lib/leagues'
 
 function shiftDate(iso, days) {
   const d = new Date(iso + 'T12:00:00')
@@ -55,7 +54,7 @@ export default function MatchesPage() {
   }, [date, load])
 
   const groups = useMemo(() => {
-    const fixtures = data?.response || []
+    const fixtures = (data?.response || []).filter((f) => isWantedLeague(f.league.id))
     const byLeague = new Map()
     for (const f of fixtures) {
       const lid = f.league.id
@@ -123,7 +122,9 @@ export default function MatchesPage() {
           ))}
         </div>
       ) : groups.length === 0 ? (
-        <div className="card p-8 text-center text-slate-400">No matches on this day.</div>
+        <div className="card p-8 text-center text-slate-400">
+          No matches in the covered leagues on this day.
+        </div>
       ) : (
         <div className="space-y-3">
           {groups.map((g) => (

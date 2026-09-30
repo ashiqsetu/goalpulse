@@ -390,7 +390,9 @@ export default function MatchDetailPage() {
             ))}
           </div>
           <div className="mt-2 text-right text-xs text-slate-500">
-            best of {odds.response[0].bookmakers?.length ?? 0} bookmakers
+            {odds.response[0].bookmakers?.[0]?.name === 'GoalPulse model (estimate)'
+              ? 'model estimate — not bookmaker prices'
+              : `best of ${odds.response[0].bookmakers?.length ?? 0} bookmakers`}
           </div>
         </section>
       )}

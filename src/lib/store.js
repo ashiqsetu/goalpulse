@@ -22,7 +22,8 @@ const notify = () => window.dispatchEvent(new Event('gp:store'))
 // ---------------------------------------------------------------- Bet slip
 
 export function loadSlip() {
-  return read(SLIP_KEY, [])
+  // Drop corrupted/legacy entries without a fixture — they break the builder.
+  return read(SLIP_KEY, []).filter((e) => e?.fixture?.id != null)
 }
 
 export function saveSlip(entries) {
@@ -34,12 +35,12 @@ export function addToSlip(fixture) {
   // Stores the full fixture object so the builder can render it offline.
   const id = fixture?.fixture?.id
   if (!id) return
-  const slip = loadSlip().filter((e) => e.fixture.id !== id)
+  const slip = loadSlip().filter((e) => e?.fixture?.id !== id)
   saveSlip([...slip, fixture])
 }
 
 export function removeFromSlip(fixtureId) {
-  saveSlip(loadSlip().filter((e) => e.fixtureId !== fixtureId))
+  saveSlip(loadSlip().filter((e) => e?.fixture?.id !== fixtureId))
 }
 
 export function clearSlip() {

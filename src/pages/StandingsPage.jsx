@@ -1,25 +1,28 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { apiGet } from '../lib/api'
+import { apiGet, planError } from '../lib/api'
 import ErrorBox from '../components/ErrorBox'
 
-// Popular leagues; free plan serves standings for seasons 2022-2024
+// Leagues with standings on the current data plan (football-data.org free
+// tier). Cups without a table (World Cup, Euro, Libertadores) are not listed.
+// IDs are the app's internal ids — the proxy maps them to the provider codes.
 const LEAGUES = [
-  { id: 39, name: 'Premier League', country: 'England', season: 2024 },
-  { id: 140, name: 'La Liga', country: 'Spain', season: 2024 },
-  { id: 135, name: 'Serie A', country: 'Italy', season: 2024 },
-  { id: 78, name: 'Bundesliga', country: 'Germany', season: 2024 },
-  { id: 61, name: 'Ligue 1', country: 'France', season: 2024 },
-  { id: 94, name: 'Eredivisie', country: 'Netherlands', season: 2024 },
+  { id: 39, name: 'Premier League', country: 'England' },
+  { id: 140, name: 'La Liga', country: 'Spain' },
+  { id: 135, name: 'Serie A', country: 'Italy' },
+  { id: 78, name: 'Bundesliga', country: 'Germany' },
+  { id: 61, name: 'Ligue 1', country: 'France' },
+  { id: 88, name: 'Eredivisie', country: 'Netherlands' },
+  { id: 94, name: 'Primeira Liga', country: 'Portugal' },
+  { id: 40, name: 'Championship', country: 'England' },
+  { id: 71, name: 'Brasileirão Série A', country: 'Brazil' },
 ]
-
-const SEASON_NOTE =
-  'Free API plan serves standings for seasons 2022–2024 — showing the most recent available (2024/25).'
 
 export default function StandingsPage() {
   const [league, setLeague] = useState(LEAGUES[0])
   const [view, setView] = useState('all') // all | home | away
   const [data, setData] = useState(null)
+  const [seasonUsed, setSeasonUsed] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -27,17 +30,40 @@ export default function StandingsPage() {
     let alive = true
     setLoading(true)
     setError(null)
-    apiGet(`standings?league=${league.id}&season=${league.season}`)
-      .then((res) => { if (alive) setData(res) })
-      .catch((e) => { if (alive) setError(e.message) })
-      .finally(() => { if (alive) setLoading(false) })
+    setData(null)
+    apiGet(`standings?league=${league.id}`)
+      .then((res) => {
+        if (!alive) return
+        const perr = planError(res)
+        if (perr) setError(perr)
+        setData(res)
+        setSeasonUsed(res?.response?.[0]?.league?.season || null)
+        setLoading(false)
+      })
+      .catch((e) => {
+        if (!alive) return
+        setError(e.message)
+        setLoading(false)
+      })
     return () => { alive = false }
   }, [league])
 
-  const rows = useMemo(
-    () => data?.response?.[0]?.league?.standings?.[0] || [],
-    [data],
-  )
+  // Cup competitions with group stages return several group tables — render all.
+  const tables = useMemo(() => {
+    const groups = data?.response?.[0]?.league?.standings || []
+    return groups.filter((g) => Array.isArray(g) && g.length > 0)
+  }, [data])
+
+  const seasonLabel =
+    data?.response?.[0]?.league?._seasonLabel ||
+    (seasonUsed ? `${seasonUsed}/${String(seasonUsed + 1).slice(2)}` : null)
+  const isCurrent = (() => {
+    const y = seasonUsed
+    if (!y) return false
+    const now = new Date()
+    const cur = now.getUTCMonth() + 1 >= 7 ? now.getUTCFullYear() : now.getUTCFullYear() - 1
+    return y === cur
+  })()
 
   return (
     <div className="space-y-4">
@@ -73,14 +99,28 @@ export default function StandingsPage() {
       </div>
 
       {error && <ErrorBox message={error} />}
-      <ErrorBox message={SEASON_NOTE} />
+      {seasonUsed && (
+        <ErrorBox
+          message={
+            isCurrent
+              ? `Current season — ${seasonLabel} standings, updated live.`
+              : `Showing the ${seasonLabel} season standings.`
+          }
+        />
+      )}
 
       {loading ? (
         <div className="card h-96 animate-pulse opacity-50" />
-      ) : rows.length === 0 ? (
+      ) : tables.length === 0 ? (
         <div className="card p-8 text-center text-slate-400">No standings data.</div>
       ) : (
-        <section className="card overflow-x-auto">
+        tables.map((rows, gi) => (
+        <section key={gi} className="card mb-3 overflow-x-auto">
+          {tables.length > 1 && (
+            <div className="border-b border-line px-3 py-2 text-sm font-semibold text-slate-300">
+              {rows[0]?.group?.replace(/^.*?\s-\s/, '') || `Group ${String.fromCharCode(65 + gi)}`}
+            </div>
+          )}
           <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b border-line text-left text-xs uppercase text-slate-400">
@@ -145,6 +185,7 @@ export default function StandingsPage() {
             <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-live" />Relegation</span>
           </div>
         </section>
+        ))
       )}
     </div>
   )

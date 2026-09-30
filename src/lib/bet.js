@@ -259,7 +259,9 @@ export function buildVariations(matches, optionsPerMatch) {
   // optionsPerMatch is already resolved by the caller (mode + user picks).
   const perMatch = matches.map((_m, i) => optionsPerMatch[i] || [{ k: 'H' }])
 
-  let combos = [{ picks: [] }]
+  // Seed combo must carry every accumulated field — spreading a missing array
+  // here throws "legOdds is not iterable" on the first leg.
+  let combos = [{ picks: [], legOdds: [], combinedOdds: 1, prob: 1 }]
   const exploded = []
   for (let i = 0; i < matches.length; i++) {
     const m = matches[i]
@@ -274,9 +276,9 @@ export function buildVariations(matches, optionsPerMatch) {
           || (prob > 0 ? Math.max(1.01, 1 / prob) : 0)
         expanded.push({
           picks: [...combo.picks, opt],
-          legOdds: [...combo.legOdds, odd],
-          combinedOdds: combo.combinedOdds * (odd || 0),
-          prob: combo.prob * prob,
+          legOdds: [...(combo.legOdds || []), odd],
+          combinedOdds: (combo.combinedOdds ?? 1) * (odd || 0),
+          prob: (combo.prob ?? 1) * prob,
         })
       }
     }
@@ -296,7 +298,9 @@ export function splitStake(variations, budget) {
   if (!sum || budget <= 0) return { stakes: variations.map(() => 0), equalReturn: 0, covered: false }
   // equal-return: stake_i = budget * (1/odds_i) / sum(1/odds)
   const raw = inv.map((x) => (budget * x) / sum)
-  const stakes = raw.map((s) => Math.floor(s * 100) / 100) // cents
+  // 4 decimals: with many variations a 2-decimal split loses real budget to
+  // rounding (e.g. 60 variations × 0.005 = 0.30 lost per ticket).
+  const stakes = raw.map((s) => Math.floor(s * 10000) / 10000)
   const covered = stakes.every((s, i) => s > 0)
   const equalReturn = Math.min(
     ...stakes.map((s, i) => (s > 0 ? s * variations[i].combinedOdds : Infinity)),

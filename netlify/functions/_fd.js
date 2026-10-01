@@ -194,6 +194,67 @@ export async function lookupMatch(id) {
   return idx[String(id)] || null
 }
 
+// ------------------------------------------------- derived splits + form
+
+const emptySplit = () => ({ played: 0, win: 0, draw: 0, lose: 0, goals: { for: 0, against: 0 } })
+
+// Blend upstream HOME/AWAY tables into TOTAL rows by team id. Rows missing a
+// split keep zeroed placeholders so the UI can render the tab without crashing.
+export function mergeSplits(rows, homeTable = [], awayTable = []) {
+  const byTeam = (t) => {
+    const m = new Map()
+    for (const r of t || []) if (r?.team?.id != null) m.set(r.team.id, r)
+    return m
+  }
+  const hm = byTeam(homeTable)
+  const am = byTeam(awayTable)
+  for (const r of rows || []) {
+    const h = hm.get(r?.team?.id)
+    const a = am.get(r?.team?.id)
+    r.home = h
+      ? { played: h.playedGames, win: h.won, draw: h.draw, lose: h.lost, goals: { for: h.goalsFor, against: h.goalsAgainst } }
+      : emptySplit()
+    r.away = a
+      ? { played: a.playedGames, win: a.won, draw: a.draw, lose: a.lost, goals: { for: a.goalsFor, against: a.goalsAgainst } }
+      : emptySplit()
+  }
+  return rows
+}
+
+// Fill home/away splits + last-5 form from a season's finished matches.
+// Needed because the free plan's standings are TOTAL-only: form is null and
+// the HOME/AWAY nodes are absent, which left the Home/Away tabs all zeros.
+export function applyDerivedSplits(rows, matches) {
+  const home = new Map()
+  const away = new Map()
+  const form = new Map() // team id → chronological "WDL…" result string
+  for (const m of matches || []) {
+    if (m?.status !== 'FINISHED') continue
+    const hid = m.homeTeam?.id
+    const aid = m.awayTeam?.id
+    const hg = m.score?.fullTime?.home
+    const ag = m.score?.fullTime?.away
+    if (hid == null || aid == null || hg == null || ag == null) continue
+    const h = home.get(hid) || emptySplit()
+    const a = away.get(aid) || emptySplit()
+    h.played++; a.played++
+    if (hg > ag) { h.win++; a.lose++ } else if (hg < ag) { a.win++; h.lose++ } else { h.draw++; a.draw++ }
+    h.goals.for += hg; h.goals.against += ag
+    a.goals.for += ag; a.goals.against += hg
+    home.set(hid, h)
+    away.set(aid, a)
+    form.set(hid, (form.get(hid) || '') + (hg > ag ? 'W' : hg < ag ? 'L' : 'D'))
+    form.set(aid, (form.get(aid) || '') + (ag > hg ? 'W' : ag < hg ? 'L' : 'D'))
+  }
+  for (const r of rows || []) {
+    const id = r?.team?.id
+    r.home = home.get(id) || emptySplit()
+    r.away = away.get(id) || emptySplit()
+    r.form = (form.get(id) || '').slice(-5)
+  }
+  return rows
+}
+
 // ------------------------------------------------------------- translations
 
 // competition/{code}/standings → api-sports standings shape (one league node
@@ -201,7 +262,6 @@ export async function lookupMatch(id) {
 // renders the first table and MatchDetailPage reads rows from it).
 export function fdStandingsToApp(fd, code) {
   const comp = competitionByCode(code)
-  const leagueRow = fd?.standings?.find?.((s) => s.type === 'TOTAL') || fd?.standings?.[0]
   // "2026" for calendar-year seasons (Brazil), "2026/27" for European ones.
   const sy = fd?.season?.startDate ? Number(fd.season.startDate.slice(0, 4)) : null
   const ey = fd?.season?.endDate ? Number(fd.season.endDate.slice(0, 4)) : null
@@ -211,7 +271,7 @@ export function fdStandingsToApp(fd, code) {
     team: { id: r.team?.id, name: r.team?.shortName || r.team?.name, logo: r.team?.crest || '' },
     points: r.points,
     goalsDiff: r.goalDifference,
-    group: r.group || (fd?.standings?.[0]?.group ? `Group ${fd.standings[0].group}` : null),
+    group: r.group || null,
     // api-sports splits all/home/away per row; the app reads r.all / r.home / r.away
     all:   { played: r.playedGames, win: r.won, draw: r.draw, lose: r.lost, goals: { for: r.goalsFor, against: r.goalsAgainst } },
     home:  { played: 0, win: 0, draw: 0, lose: 0, goals: { for: 0, against: 0 } },
@@ -227,19 +287,16 @@ export function fdStandingsToApp(fd, code) {
     update: fd?.season?.utcLastUpdated || null,
   })
 
-  const total = (leagueRow?.table || []).map(toRow)
   const home = fd?.standings?.find?.((s) => s.type === 'HOME')?.table || []
   const away = fd?.standings?.find?.((s) => s.type === 'AWAY')?.table || []
-  // Merge home/away splits into the total rows by position.
-  for (const r of total) {
-    const h = home[r.rank - 1]
-    const a = away[r.rank - 1]
-    if (h) r.home = { played: h.playedGames, win: h.won, draw: h.draw, lose: h.lost, goals: { for: h.goalsFor, against: h.goalsAgainst } }
-    if (a) r.away = { played: a.playedGames, win: a.won, draw: a.draw, lose: a.lost, goals: { for: a.goalsFor, against: a.goalsAgainst } }
-  }
+  // Every TOTAL node becomes one renderable table: leagues have exactly one;
+  // cup competitions have one per group (the UI renders multi-table output).
+  const tables = (fd?.standings || [])
+    .filter((s) => !s?.type || s.type === 'TOTAL')
+    .map((s) => mergeSplits((s.table || []).map(toRow), home, away))
 
   return {
-    results: total.length,
+    results: tables.reduce((n, t) => n + t.length, 0),
     response: [{
       league: {
         id: comp?.id ?? 0,
@@ -250,7 +307,7 @@ export function fdStandingsToApp(fd, code) {
         season: sy,
         _seasonLabel: seasonLabel,
         _currentMatchday: fd?.season?.currentMatchday ?? null,
-        standings: [total],
+        standings: tables,
       },
     }],
   }

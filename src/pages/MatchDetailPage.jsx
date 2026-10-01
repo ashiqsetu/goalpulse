@@ -343,9 +343,11 @@ export default function MatchDetailPage() {
                     <div className="text-xs text-slate-300">
                       {r.points} pts · {r.all.played} played · GD {r.goalsDiff > 0 ? '+' : ''}{r.goalsDiff}
                     </div>
-                    <div className="mt-1 text-xs text-slate-400">
-                      Home {r.home.win}W-{r.home.draw}D-{r.home.lose}L · Away {r.away.win}W-{r.away.draw}D-{r.away.lose}L
-                    </div>
+                    {(r.home?.played || 0) + (r.away?.played || 0) > 0 && (
+                      <div className="mt-1 text-xs text-slate-400">
+                        Home {r.home.win}W-{r.home.draw}D-{r.home.lose}L · Away {r.away.win}W-{r.away.draw}D-{r.away.lose}L
+                      </div>
+                    )}
                   </div>
                 ) : null,
               )}

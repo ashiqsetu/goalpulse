@@ -4,7 +4,7 @@ import { consumeQuota, quotaSnapshot } from './_quota.js'
 import {
   fdMatchToFixture, fdStandingsToApp, fdTeamToApp, fdGet,
   indexMatches, lookupMatch, lookupTeamCompetitions, codeFromLegacyId,
-  competitionByCode, competitionById,
+  competitionByCode, competitionById, applyDerivedSplits,
 } from './_fd.js'
 import { expectedGoals, matchModel, fairOdds, pctStr } from './_model.js'
 
@@ -30,8 +30,16 @@ const ALLOWED = new Set([
 // Top leagues scanned when the fixture-id index can't locate a match/pair yet.
 const FALLBACK_CODES = ['PL', 'PD', 'SA', 'BL1', 'FL1', 'CL']
 
-const canonical = (base, params) =>
-  base + '?' + new URLSearchParams(Object.entries(params).sort()).toString()
+// Cache keys double as Netlify Blobs keys, and blob keys are URL path
+// segments: `?`, `&` and `=` in a key are parsed as a query string and
+// dropped, which collapsed every standings league (and every fixture date,
+// h2h pair, team, prediction) onto ONE cached payload — the first league
+// fetched was served for all of them until the TTL expired. Percent-encode
+// the params so each variant gets its own blob under a single path segment.
+const canonical = (base, params) => {
+  const qs = new URLSearchParams(Object.entries(params).sort()).toString()
+  return qs ? `${base}@${encodeURIComponent(qs)}` : base
+}
 
 export default async (req) => {
   if (req.method === 'OPTIONS') return json(200, {})
@@ -101,7 +109,11 @@ export default async (req) => {
     return json(502, { error: e?.message || 'Upstream error' })
   }
 
-  await cacheSet(key, payload, ttlFor(base))
+  let ttl = ttlFor(base)
+  // Degraded standings (no splits/form derivable) must not stick around —
+  // let the next request re-derive once the upstream throttle window clears.
+  if (payload?._noSplits) ttl = 90
+  await cacheSet(key, payload, ttl)
   pruneExpired().catch(() => {})
   return json(200, payload)
 }
@@ -224,8 +236,33 @@ async function handleStandings(params, apiKey) {
   const comp = competitionByCode(params.league) || competitionById(params.league)
   if (!comp) return empty({ league: 'Unknown league' })
   const j = await fdGet(`competitions/${comp.code}/standings`, apiKey)
-  return fdStandingsToApp(j, comp.code)
+  const app = fdStandingsToApp(j, comp.code)
+  // The free plan's standings are TOTAL-only (no HOME/AWAY nodes, form null).
+  // Derive splits + last-5 form from the cached season match list.
+  try {
+    const matches = await getSeasonMatches(comp.code, apiKey)
+    for (const rows of app?.response?.[0]?.league?.standings || []) {
+      applyDerivedSplits(rows, matches)
+    }
+  } catch {
+    // Throttled while fetching the match list: fall back to the stale season
+    // list so the table still gets splits/form. If no stale copy exists the
+    // payload is marked degraded — the handler then caches it briefly instead
+    // of baking zeroed home/away tabs in for the full 12h TTL.
+    let matches = []
+    try {
+      const stale = await cacheGetStale(`fdseason:${comp.code}`)
+      matches = stale?.matches || []
+    } catch { /* stay empty */ }
+    for (const rows of app?.response?.[0]?.league?.standings || []) {
+      applyDerivedSplits(rows, matches)
+    }
+    if (!matches.length) app._noSplits = true
+  }
+  return app
 }
+
+export { handleStandings }
 
 async function handleTeams(params, apiKey) {
   if (!params.id) return empty({ team: 'Missing team id' })

@@ -5,7 +5,9 @@
 import { getStore } from '@netlify/blobs'
 
 const STORE = 'gp-cache'
-const NS = 'api-cache'
+// v2: standings payloads cached before the derived home/away-splits + form fix
+// had zeroed splits baked in — bumping the namespace invalidates them.
+const NS = 'api-cache-v2'
 const MAX_AGE_DAYS = 7 // prune response payloads after a week
 
 let store = null

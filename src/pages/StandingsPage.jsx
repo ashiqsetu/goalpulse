@@ -54,6 +54,11 @@ export default function StandingsPage() {
     return groups.filter((g) => Array.isArray(g) && g.length > 0)
   }, [data])
 
+  // Splits come from the season's finished matches; when the backend couldn't
+  // derive them (throttle window, no cached match list yet) only Overall works.
+  const hasSplits = tables.some((rows) => rows.some((r) => (r.home?.played || 0) + (r.away?.played || 0) > 0))
+  const effView = hasSplits ? view : 'all'
+
   const seasonLabel =
     data?.response?.[0]?.league?._seasonLabel ||
     (seasonUsed ? `${seasonUsed}/${String(seasonUsed + 1).slice(2)}` : null)
@@ -75,7 +80,7 @@ export default function StandingsPage() {
               key={v}
               onClick={() => setView(v)}
               className={`rounded-md px-3 py-1 font-semibold capitalize transition ${
-                view === v ? 'bg-grass text-pitch' : 'text-slate-300 hover:text-white'
+                effView === v || (v === 'all' && !hasSplits) ? 'bg-grass text-pitch' : 'text-slate-300 hover:text-white'
               }`}
             >
               {v === 'all' ? 'Overall' : v}
@@ -139,7 +144,8 @@ export default function StandingsPage() {
             </thead>
             <tbody>
               {rows.map((r, idx) => {
-                const s = view === 'all' ? r.all : view === 'home' ? r.home : r.away
+                const s = (effView === 'all' ? r.all : effView === 'home' ? r.home : r.away)
+                  || { played: 0, win: 0, draw: 0, lose: 0, goals: { for: 0, against: 0 } }
                 const zone =
                   idx < 4 ? 'bg-grass' : idx < 6 ? 'bg-gold' : idx >= rows.length - 3 ? 'bg-live' : 'bg-transparent'
                 return (

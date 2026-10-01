@@ -99,7 +99,24 @@ export default async (req) => {
     const stale = await cacheGetStale(key)
     if (stale) return json(200, { ...stale, _cached: true, _stale: true })
     if (e?.status === 429) {
-      return json(429, { error: 'Upstream rate limit reached (10 req/min on the free plan) — data is cached, try again shortly.' })
+      const retryAfter = Math.max(1, Math.min(60, Number(e?.retryAfter) || 60))
+      return new Response(
+        JSON.stringify({
+          error: 'Upstream rate limit reached (10 req/min on the free plan) — data is cached, try again shortly.',
+          retryable: true,
+        }),
+        {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-store',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': '*',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Retry-After': String(retryAfter),
+          },
+        },
+      )
     }
     if (e?.status === 403 || e?.status === 404) {
       // Plan restriction / unknown resource → app-shaped empty so the
@@ -232,10 +249,25 @@ async function handleH2H(params, apiKey) {
   return empty()
 }
 
+export { handleStandings }
+
+// One match page fires standings three times (table + predictions + odds).
+// A 60s in-process memo of the raw upstream payload collapses those to a
+// single upstream call on warm instances; the Blobs cache covers cold ones.
+const stMemo = new Map() // code -> { at, j }
+const ST_MEMO_MS = 60_000
+async function getStandingsRaw(code, apiKey) {
+  const hit = stMemo.get(code)
+  if (hit && Date.now() - hit.at < ST_MEMO_MS) return hit.j
+  const j = await fdGet(`competitions/${code}/standings`, apiKey)
+  stMemo.set(code, { at: Date.now(), j })
+  return j
+}
+
 async function handleStandings(params, apiKey) {
   const comp = competitionByCode(params.league) || competitionById(params.league)
   if (!comp) return empty({ league: 'Unknown league' })
-  const j = await fdGet(`competitions/${comp.code}/standings`, apiKey)
+  const j = await getStandingsRaw(comp.code, apiKey)
   const app = fdStandingsToApp(j, comp.code)
   // The free plan's standings are TOTAL-only (no HOME/AWAY nodes, form null).
   // Derive splits + last-5 form from the cached season match list.
@@ -261,8 +293,6 @@ async function handleStandings(params, apiKey) {
   }
   return app
 }
-
-export { handleStandings }
 
 async function handleTeams(params, apiKey) {
   if (!params.id) return empty({ team: 'Missing team id' })

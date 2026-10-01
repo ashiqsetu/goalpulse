@@ -1,7 +1,17 @@
 const BASE = '/api/fetch?ep='
 
 export async function apiGet(endpoint) {
-  const res = await fetch(BASE + encodeURIComponent(endpoint))
+  let res = await fetch(BASE + encodeURIComponent(endpoint))
+  // Upstream rate-limit windows are ~60s, but the limiter clears as calls
+  // age out of the rolling minute — one patient retry recovers most hits.
+  if (res.status === 429) {
+    const body = await res.json().catch(() => ({}))
+    if (body?.retryable) {
+      const after = Math.max(3, Math.min(8, Number(res.headers.get('Retry-After')) || 5))
+      await new Promise((r) => setTimeout(r, after * 1000))
+      res = await fetch(BASE + encodeURIComponent(endpoint))
+    }
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error(body.error || `Request failed (${res.status})`)

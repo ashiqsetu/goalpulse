@@ -337,9 +337,38 @@ export function fdTeamToApp(fd) {
 
 // ------------------------------------------------------------- fd fetching
 
+// Client-side pacing for the free plan's 10 req/min throttle. Without it,
+// rapid league clicks or a match page's parallel standings calls burn the
+// window and every request 429s. Best-effort per instance (Netlify spins up
+// multiple), so real upstream 429s are still handled below.
+const RATE_LIMIT = 9 // stay one under the provider's 10
+const RATE_WINDOW_MS = 60_000
+const MAX_WAIT_MS = 7_000 // function timeout is ~10s — don't wait longer
+const sentAt = []
+
+async function pace() {
+  const now = Date.now()
+  while (sentAt.length && now - sentAt[0] >= RATE_WINDOW_MS) sentAt.shift()
+  if (sentAt.length < RATE_LIMIT) {
+    sentAt.push(now)
+    return
+  }
+  const waitMs = RATE_WINDOW_MS - (now - sentAt[0])
+  if (waitMs > MAX_WAIT_MS) {
+    const err = new Error(`football-data.org window full — retry in ${Math.ceil(waitMs / 1000)}s`)
+    err.status = 429
+    err.retryable = true
+    err.retryAfter = Math.ceil(waitMs / 1000)
+    throw err
+  }
+  await new Promise((r) => setTimeout(r, waitMs + 50))
+  sentAt.push(Date.now())
+}
+
 // Thin GET with the free plan's error surface translated to exceptions the
-// router can act on (throttle → 429, forbidden → plan restrictions).
+// router can act on (throttle → retryable 429, forbidden → plan restrictions).
 export async function fdGet(path, apiKey, query) {
+  await pace()
   const qs = query ? '?' + new URLSearchParams(query).toString() : ''
   const res = await fetch(`${FD_BASE}/${path}${qs}`, {
     headers: { 'X-Auth-Token': apiKey || '' },
@@ -347,6 +376,8 @@ export async function fdGet(path, apiKey, query) {
   if (res.status === 429) {
     const err = new Error('football-data.org rate limit hit (10 req/min on the free plan)')
     err.status = 429
+    err.retryable = true
+    err.retryAfter = 60
     throw err
   }
   const body = await res.json().catch(() => ({}))
